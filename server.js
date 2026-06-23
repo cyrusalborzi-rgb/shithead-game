@@ -114,7 +114,7 @@ function buildGameState(clients) {
   return {
     version: 1, players, deck, pile: [], discardCount: 0,
     currentPlayer: 0, direction: 1, pileVisible: null,
-    swapPhase: true,
+    swapPhase: true, pendingBlack3: null, lastEvent: null,
     log: ['🃏 Partie lancée ! Phase d\'échange — choisissez vos cartes visibles.']
   };
 }
