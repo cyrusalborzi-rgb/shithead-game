@@ -158,6 +158,7 @@ input::placeholder{color:var(--muted)}
 </style>
 </head>
 <body>
+<button id="musicBtn" onclick="toggleMusic()" style="position:fixed;top:12px;right:12px;z-index:120;width:40px;height:40px;border-radius:50%;border:1px solid var(--border2);background:var(--surface);color:var(--text);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">🔊</button>
 <canvas id="confettiCanvas"></canvas>
 <div id="fxLayer"></div>
 <div id="winLayer">
@@ -240,7 +241,7 @@ input::placeholder{color:var(--muted)}
     <div class="opponents-row" id="opponentsRow"></div>
     <div class="table-center">
       <div class="pile-slot"><div class="pile-slot-label">Pioche</div><div class="big-card deck-style" id="deckCard">—</div></div>
-      <div class="pile-slot"><div class="pile-slot-label">Pile</div><div class="big-card empty" id="pileCard">Vide</div></div>
+      <div class="pile-slot"><div class="pile-slot-label" id="pileLabel">Pile</div><div class="big-card empty" id="pileCard">Vide</div><div id="pileMulti" style="display:none;margin-top:6px;font-size:11px;font-weight:700;color:var(--gold);background:rgba(240,192,96,0.12);border:1px solid rgba(240,192,96,0.3);border-radius:10px;padding:2px 8px"></div></div>
       <div class="pile-slot" id="discardSlot" style="display:none"><div class="pile-slot-label">Défaussées</div><div class="big-card deck-style" id="discardCard" style="color:var(--muted)">0</div></div>
     </div>
     <div class="info-bar" id="infoBar"><span style="color:var(--muted);font-size:13px">En attente...</span></div>
@@ -310,6 +311,65 @@ function fanfare(){
   const seq=[[523,0,0.2],[659,0.18,0.2],[784,0.36,0.2],[1046,0.54,0.45],[784,0.9,0.18],[1046,1.05,0.6]];
   seq.forEach(([f,s,d])=>tone(f,s,d,'triangle',0.3));
   seq.forEach(([f,s,d])=>tone(f/2,s,d,'sine',0.12));
+}
+
+/* ---------- MUSIQUE DE FOND (lounge casino, synthétisée, libre de droits) ---------- */
+let music={on:false,timer:null,gain:null,step:0};
+function mtone(freq,start,dur,type,vol){
+  const a=audio();if(!a||!music.gain)return;
+  const o=a.createOscillator(),g=a.createGain();
+  o.type=type||'sine';o.frequency.value=freq;o.connect(g);g.connect(music.gain);
+  const t=a.currentTime+start;
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol||0.1,t+0.03);
+  g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  o.start(t);o.stop(t+dur+0.05);
+}
+function noiseHat(start,vol){
+  const a=audio();if(!a||!music.gain)return;
+  const b=a.createBuffer(1,Math.floor(a.sampleRate*0.05),a.sampleRate);
+  const d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  const src=a.createBufferSource();src.buffer=b;
+  const hp=a.createBiquadFilter();hp.type='highpass';hp.frequency.value=8000;
+  const g=a.createGain();const t=a.currentTime+start;
+  g.gain.setValueAtTime(vol||0.03,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.05);
+  src.connect(hp);hp.connect(g);g.connect(music.gain);src.start(t);src.stop(t+0.06);
+}
+// Progression jazz-lounge : Cmaj7 - Am7 - Dm7 - G7 (feutré, ambiance casino)
+const PROG=[
+  {bass:65.41,notes:[261.63,329.63,392.00,493.88]},
+  {bass:55.00,notes:[220.00,261.63,329.63,392.00]},
+  {bass:73.42,notes:[293.66,349.23,440.00,523.25]},
+  {bass:49.00,notes:[246.94,293.66,392.00,440.00]}
+];
+function musicTick(){
+  if(!music.on)return;
+  const beat=0.46;
+  const bar=Math.floor(music.step/4)%PROG.length;
+  const b=music.step%4;
+  const ch=PROG[bar];
+  mtone(ch.bass,0,beat*0.95,'sine',0.16);            // walking bass
+  if(b===0)ch.notes.forEach((n,i)=>mtone(n,0.01*i,beat*1.8,'triangle',0.045)); // accord doux
+  mtone(ch.notes[b%ch.notes.length]*2,0,beat*0.5,'triangle',0.04); // arpège léger
+  if(b%2===1)noiseHat(0,0.025);                       // hi-hat sur le contretemps
+  music.step++;
+  music.timer=setTimeout(musicTick,beat*1000);
+}
+function startMusic(){
+  const a=audio();if(!a)return;
+  if(a.state==='suspended')a.resume();
+  if(music.timer)return;
+  music.gain=a.createGain();music.gain.gain.value=0;music.gain.connect(a.destination);
+  music.gain.gain.linearRampToValueAtTime(0.5,a.currentTime+1.5);
+  music.on=true;music.step=0;musicTick();
+}
+function stopMusic(){
+  music.on=false;if(music.timer){clearTimeout(music.timer);music.timer=null;}
+  if(music.gain){try{music.gain.gain.linearRampToValueAtTime(0,audio().currentTime+0.3);}catch(e){}music.gain=null;}
+}
+function toggleMusic(){
+  const btn=document.getElementById('musicBtn');
+  if(music.on){stopMusic();btn.textContent='🔇';btn.style.opacity='0.5';}
+  else{audio();startMusic();btn.textContent='🔊';btn.style.opacity='1';}
 }
 
 /* ---------- FX visuels ---------- */
@@ -392,7 +452,7 @@ function renderWaiting(){const p=state.players||[];document.getElementById('wait
 function refreshRooms(){send({type:'get_rooms'});}
 function renderRoomList(rooms){const el=document.getElementById('roomList');if(!rooms||!rooms.length){el.innerHTML='<div class="empty-state">Aucune partie disponible</div>';return;}el.innerHTML=rooms.map(r=>`<div class="room-item"><div><span style="font-weight:600;color:var(--accent2)">${r.code}</span><span style="color:var(--muted);margin-left:8px">${r.count}/4 • Hôte : ${r.host}</span></div><button class="btn btn-secondary" onclick="joinRoom('${r.code}')" style="font-size:12px;padding:6px 12px">Rejoindre</button></div>`).join('');}
 function startGame(){send({type:'start_game'});}
-function receiveGameStart(gs){document.getElementById('lobby').style.display='none';document.getElementById('game').style.display='block';applyGS(gs);}
+function receiveGameStart(gs){document.getElementById('lobby').style.display='none';document.getElementById('game').style.display='block';startMusic();applyGS(gs);}
 
 /* ---------- ÉTAT DU JEU ---------- */
 function applyGS(gs){
@@ -432,6 +492,11 @@ function renderGame(gs){
 
   document.getElementById('deckCard').textContent=gs.deck.length+' cartes';
   renderBigCard(gs);
+  // compteur de cartes dans la pile + indicateur multi-cartes
+  document.getElementById('pileLabel').textContent=gs.pile.length>0?`Pile (${gs.pile.length})`:'Pile';
+  const pm=document.getElementById('pileMulti');
+  if(gs.lastPlayCount>=2&&gs.pile.length>0){pm.style.display='inline-block';pm.textContent='🃏 ×'+gs.lastPlayCount+' posées';}
+  else pm.style.display='none';
   if(gs.discardCount>0){document.getElementById('discardSlot').style.display='block';document.getElementById('discardCard').textContent=gs.discardCount+' eff.';}
 
   renderOpponents(gs,me.idx);
@@ -601,7 +666,7 @@ function playSelected(){
 function doPlay(cards){
   const gs=clone(state.gs);const me=gs.players.find(p=>p.id===state.myId);const first=cards[0];
   cards.forEach(c=>removeCard(me,c));
-  gs.pile.push(...cards);gs.log=gs.log||[];
+  gs.pile.push(...cards);gs.lastPlayCount=cards.length;gs.log=gs.log||[];
   gs.log.push(`<span class="hl">${me.name}</span> joue ${cards.map(c=>c.rank+suitSym(c)).join(' + ')}`);
   drawTo6(me,gs);
   let sameTurn=false,ev={kind:'play'};
@@ -626,7 +691,7 @@ function playHidden(c){
   me.hidden[idx]=null;gs.log=gs.log||[];
   gs.log.push(`<span class="hl">${me.name}</span> retourne une carte cachée : <b>${c.rank}${SUIT_SYM[c.suit]}</b>`);
   if(canPlay(c,gs)){
-    gs.pile.push(c);gs.log.push('<span class="good">✓ Jouable !</span>');
+    gs.pile.push(c);gs.lastPlayCount=1;gs.log.push('<span class="good">✓ Jouable !</span>');
     let sameTurn=false,ev={kind:'play'};
     if(c.rank==='10'){gs.discardCount+=gs.pile.length;gs.pile=[];gs.pileVisible=null;gs.log.push('<span class="good">💥 10 — Pile effacée !</span>');sameTurn=true;ev={kind:'10'};}
     else if(c.rank==='2'){gs.pileVisible=null;gs.log.push('<span class="warn">🔄 2 — Reset !</span>');ev={kind:'2'};}
@@ -639,9 +704,10 @@ function playHidden(c){
     if(!sameTurn&&!me.done)advanceTurn(gs);
     gs.version=(gs.version||0)+1;ev.nonce=gs.version;gs.lastEvent=ev;
   } else {
-    me.hand.push(c,...gs.pile);gs.pile=[];gs.pileVisible=null;
-    gs.log.push(`<span class="warn">✗ Pas jouable — ${me.name} ramasse la pile !</span>`);
-    advanceTurn(gs);
+    me.hand.push(c,...gs.pile);gs.pile=[];gs.pileVisible=null;gs.lastPlayCount=0;
+    gs.log.push(`<span class="warn">✗ Pas jouable — ${me.name} ramasse la pile et rejoue !</span>`);
+    // celui qui ramasse rejoue
+    gs.currentPlayer=me.idx;
     gs.version=(gs.version||0)+1;gs.lastEvent={kind:'pickup',nonce:gs.version};
   }
   send({type:'game_state',gameState:gs});applyGS(gs);
@@ -652,9 +718,11 @@ function advanceTurn(gs){const n=gs.players.length;let next=(gs.currentPlayer+gs
 function pickupPile(){
   const gs=clone(state.gs);const me=gs.players.find(p=>p.id===state.myId);
   if(!me||!gs.pile.length)return;
-  me.hand.push(...gs.pile);gs.pile=[];gs.pileVisible=null;gs.log=gs.log||[];
-  gs.log.push(`<span class="hl">${me.name}</span> ramasse la pile (${me.hand.length} cartes)`);
-  advanceTurn(gs);gs.version=(gs.version||0)+1;gs.lastEvent={kind:'pickup',nonce:gs.version};
+  me.hand.push(...gs.pile);gs.pile=[];gs.pileVisible=null;gs.lastPlayCount=0;gs.log=gs.log||[];
+  gs.log.push(`<span class="hl">${me.name}</span> ramasse la pile (${me.hand.length} cartes) — <span class="warn">il rejoue !</span>`);
+  // celui qui ramasse rejoue : on n'avance PAS le tour
+  gs.currentPlayer=me.idx;
+  gs.version=(gs.version||0)+1;gs.lastEvent={kind:'pickup',nonce:gs.version};
   state.selectedCards=[];send({type:'game_state',gameState:gs});applyGS(gs);
 }
 
@@ -697,9 +765,11 @@ function acceptBlack3(){closeOverlay();autoAcceptBlack3();}
 function autoAcceptBlack3(){
   const gs=clone(state.gs);const me=gs.players.find(p=>p.id===state.myId);
   if(!gs.pendingBlack3)return;
-  me.hand.push(...gs.pile);gs.pile=[];gs.pileVisible=null;gs.log=gs.log||[];
-  gs.log.push(`<span class="warn">${me.name} encaisse la pile (3 Noir).</span>`);
-  gs.pendingBlack3=null;advanceTurn(gs);
+  me.hand.push(...gs.pile);gs.pile=[];gs.pileVisible=null;gs.lastPlayCount=0;gs.log=gs.log||[];
+  gs.log.push(`<span class="warn">${me.name} encaisse la pile (3 Noir) — il rejoue !</span>`);
+  gs.pendingBlack3=null;
+  // celui qui prend le 3 noir rejoue
+  gs.currentPlayer=me.idx;
   gs.version=(gs.version||0)+1;gs.lastEvent={kind:'pickup',nonce:gs.version};
   send({type:'game_state',gameState:gs});applyGS(gs);
 }
@@ -711,9 +781,11 @@ function counterBlack3(){
   let b3=me.hand.find(isBlack3)||(me.open||[]).find(c=>isBlack3(c));
   if(!b3)return;
   removeCard(me,b3);gs.discardCount+=1;drawTo6(me,gs);
-  attacker.hand.push(...gs.pile);gs.pile=[];gs.pileVisible=null;gs.log=gs.log||[];
-  gs.log.push(`<span class="hl">${me.name}</span> contre avec un 3 Noir ! <span class="warn">${attacker.name} ramasse la pile.</span>`);
-  gs.pendingBlack3=null;advanceTurn(gs);
+  attacker.hand.push(...gs.pile);gs.pile=[];gs.pileVisible=null;gs.lastPlayCount=0;gs.log=gs.log||[];
+  gs.log.push(`<span class="hl">${me.name}</span> contre avec un 3 Noir ! <span class="warn">${attacker.name} ramasse la pile et rejoue.</span>`);
+  gs.pendingBlack3=null;
+  // l'attaquant contré ramasse et rejoue
+  gs.currentPlayer=attacker.idx;
   gs.version=(gs.version||0)+1;gs.lastEvent={kind:'counter',nonce:gs.version};
   send({type:'game_state',gameState:gs});applyGS(gs);
 }
