@@ -1,0 +1,12 @@
+{
+  "name": "shithead-game",
+  "version": "1.0.0",
+  "description": "Jeu de cartes Shithead multijoueur",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}
