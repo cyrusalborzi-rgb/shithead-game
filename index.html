@@ -155,6 +155,27 @@ input::placeholder{color:var(--muted)}
 .win-name{color:var(--gold)}
 #confettiCanvas{position:fixed;inset:0;z-index:109;pointer-events:none;display:none}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+
+/* CHAT */
+#chatToggle{position:fixed;bottom:16px;right:16px;z-index:115;width:54px;height:54px;border-radius:50%;border:1px solid var(--border2);background:var(--accent);color:#fff;cursor:pointer;font-size:22px;display:none;align-items:center;justify-content:center;box-shadow:0 6px 24px var(--accent-glow);transition:transform 0.15s}
+#chatToggle:hover{transform:scale(1.08)}
+#chatBadge{position:absolute;top:-2px;right:-2px;min-width:20px;height:20px;border-radius:10px;background:var(--red);color:#fff;font-size:11px;font-weight:700;display:none;align-items:center;justify-content:center;padding:0 5px}
+#chatPanel{position:fixed;bottom:16px;right:16px;z-index:116;width:330px;max-width:calc(100vw - 32px);height:440px;max-height:calc(100vh - 32px);background:var(--surface);border:1px solid var(--border2);border-radius:18px;display:none;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5)}
+#chatPanel.open{display:flex;animation:chatIn 0.2s ease}
+@keyframes chatIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.chat-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;color:var(--accent2)}
+.chat-header button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1}
+.chat-messages{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.chat-msg{max-width:80%;padding:8px 12px;border-radius:14px;font-size:13px;line-height:1.4;word-break:break-word}
+.chat-msg.them{align-self:flex-start;background:var(--surface3);border-bottom-left-radius:4px}
+.chat-msg.me{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+.chat-msg .author{font-size:11px;font-weight:600;color:var(--accent2);margin-bottom:2px}
+.chat-msg.me .author{color:#e0d8ff}
+.chat-sys{align-self:center;font-size:11px;color:var(--muted);font-style:italic}
+.chat-input-row{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border)}
+.chat-input-row input{flex:1}
+.chat-input-row button{padding:8px 14px}
+.chat-empty{color:var(--muted);font-size:12px;text-align:center;margin:auto;padding:20px}
 </style>
 </head>
 <body>
@@ -270,6 +291,16 @@ input::placeholder{color:var(--muted)}
 </div>
 </div>
 <div id="overlayContainer"></div>
+
+<button id="chatToggle" onclick="toggleChat()">💬<span id="chatBadge">0</span></button>
+<div id="chatPanel">
+  <div class="chat-header"><span>💬 Chat</span><button onclick="toggleChat()">×</button></div>
+  <div class="chat-messages" id="chatMessages"><div class="chat-empty">Aucun message pour l'instant. Dis bonjour !</div></div>
+  <div class="chat-input-row">
+    <input id="chatInput" type="text" placeholder="Message..." maxlength="200" onkeydown="if(event.key==='Enter')sendChat()"/>
+    <button class="btn btn-primary" onclick="sendChat()">→</button>
+  </div>
+</div>
 
 <script>
 const SUIT_SYM={hearts:'♥',diamonds:'♦',clubs:'♣',spades:'♠'};
@@ -439,6 +470,7 @@ function handleServer(msg){
   if(msg.type==='game_start'){audio();receiveGameStart(msg.gameState);}
   if(msg.type==='game_state'){applyGS(msg.gameState);}
   if(msg.type==='player_left'){addLog(msg.name+' a quitté la partie.','warn');}
+  if(msg.type==='chat'){receiveChat(msg);}
   if(msg.type==='error'){alert(msg.msg);}
 }
 function getName(){return document.getElementById('myName').value.trim()||'Joueur';}
@@ -452,7 +484,7 @@ function renderWaiting(){const p=state.players||[];document.getElementById('wait
 function refreshRooms(){send({type:'get_rooms'});}
 function renderRoomList(rooms){const el=document.getElementById('roomList');if(!rooms||!rooms.length){el.innerHTML='<div class="empty-state">Aucune partie disponible</div>';return;}el.innerHTML=rooms.map(r=>`<div class="room-item"><div><span style="font-weight:600;color:var(--accent2)">${r.code}</span><span style="color:var(--muted);margin-left:8px">${r.count}/4 • Hôte : ${r.host}</span></div><button class="btn btn-secondary" onclick="joinRoom('${r.code}')" style="font-size:12px;padding:6px 12px">Rejoindre</button></div>`).join('');}
 function startGame(){send({type:'start_game'});}
-function receiveGameStart(gs){document.getElementById('lobby').style.display='none';document.getElementById('game').style.display='block';startMusic();applyGS(gs);}
+function receiveGameStart(gs){document.getElementById('lobby').style.display='none';document.getElementById('game').style.display='block';document.getElementById('chatToggle').style.display='flex';startMusic();applyGS(gs);}
 
 /* ---------- ÉTAT DU JEU ---------- */
 function applyGS(gs){
@@ -798,6 +830,41 @@ function showWin(name){
   startConfetti();fanfare();
 }
 function toggleRules(){const r=document.getElementById('rulesBox');r.style.display=r.style.display==='none'?'block':'none';}
+
+/* ---------- CHAT ---------- */
+let chat={open:false,unread:0,hasMsg:false};
+function toggleChat(){
+  const panel=document.getElementById('chatPanel');
+  chat.open=!chat.open;
+  if(chat.open){
+    panel.classList.add('open');
+    chat.unread=0;updateChatBadge();
+    setTimeout(()=>document.getElementById('chatInput').focus(),50);
+  } else panel.classList.remove('open');
+}
+function updateChatBadge(){
+  const b=document.getElementById('chatBadge');
+  if(chat.unread>0&&!chat.open){b.style.display='flex';b.textContent=chat.unread>9?'9+':chat.unread;}
+  else b.style.display='none';
+}
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function sendChat(){
+  const inp=document.getElementById('chatInput');
+  const text=inp.value.trim();if(!text)return;
+  send({type:'chat',text});
+  inp.value='';inp.focus();
+}
+function receiveChat(msg){
+  const box=document.getElementById('chatMessages');
+  if(!chat.hasMsg){box.innerHTML='';chat.hasMsg=true;}
+  const mine=msg.senderId===state.myId;
+  const div=document.createElement('div');
+  div.className='chat-msg '+(mine?'me':'them');
+  div.innerHTML=(mine?'':`<div class="author">${escapeHtml(msg.name)}</div>`)+escapeHtml(msg.text);
+  box.appendChild(div);
+  box.scrollTop=box.scrollHeight;
+  if(!chat.open&&!mine){chat.unread++;updateChatBadge();sfx('play');}
+}
 
 connect();
 </script>

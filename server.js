@@ -83,6 +83,13 @@ wss.on('connection', (ws) => {
       const room = rooms[ws.roomCode]; if (!room) return;
       broadcast(room, msg, ws.id); return;
     }
+    if (msg.type === 'chat') {
+      const room = rooms[ws.roomCode]; if (!room) return;
+      const text = String(msg.text || '').slice(0, 200);
+      if (!text.trim()) return;
+      broadcastAll(room, { type: 'chat', name: ws.name || 'Joueur', text, senderId: ws.id });
+      return;
+    }
   });
 
   ws.on('close', () => {
