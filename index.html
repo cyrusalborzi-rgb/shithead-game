@@ -57,6 +57,13 @@ input::placeholder{color:var(--muted)}
 .room-item{display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;font-size:13px}
 .room-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
 .empty-state{color:var(--muted);font-size:13px;padding:8px 0}
+.choice-row{display:flex;gap:8px;margin:8px 0 16px}
+.choice-btn{flex:1;padding:11px 8px;border-radius:10px;border:2px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;font-weight:600;font-size:13px;transition:all 0.15s}
+.choice-btn:active{transform:scale(0.96)}
+.choice-btn.easy.sel{border-color:var(--green);background:rgba(82,201,122,0.18);color:var(--green);box-shadow:0 0 14px rgba(82,201,122,0.25)}
+.choice-btn.med.sel{border-color:#f0a020;background:rgba(240,160,32,0.18);color:#f0c060;box-shadow:0 0 14px rgba(240,160,32,0.25)}
+.choice-btn.hard.sel{border-color:var(--red);background:rgba(240,82,82,0.18);color:#ff8080;box-shadow:0 0 14px rgba(240,82,82,0.25)}
+.choice-btn.num.sel{border-color:var(--accent);background:rgba(124,106,247,0.18);color:var(--accent2);box-shadow:0 0 14px var(--accent-glow)}
 .player-chip{display:inline-flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:13px;margin:4px}
 .player-chip.me{border-color:var(--accent);color:var(--accent2)}
 .player-chip .dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
@@ -197,7 +204,24 @@ input::placeholder{color:var(--muted)}
 
 <div id="lobby">
   <div class="panel">
-    <div class="panel-title">Rejoindre une partie</div>
+    <div class="panel-title">🤖 Jouer contre l'ordinateur</div>
+    <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Difficulté</label>
+    <div class="choice-row">
+      <button class="choice-btn diff easy" data-diff="easy" onclick="selectDiff('easy',this)">😀 Facile</button>
+      <button class="choice-btn diff med sel" data-diff="med" onclick="selectDiff('med',this)">😐 Moyen</button>
+      <button class="choice-btn diff hard" data-diff="hard" onclick="selectDiff('hard',this)">😈 Difficile</button>
+    </div>
+    <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Nombre d'adversaires</label>
+    <div class="choice-row">
+      <button class="choice-btn num sel" data-n="1" onclick="selectNum(1,this)">1 bot</button>
+      <button class="choice-btn num" data-n="2" onclick="selectNum(2,this)">2 bots</button>
+      <button class="choice-btn num" data-n="3" onclick="selectNum(3,this)">3 bots</button>
+    </div>
+    <button class="btn btn-gold" onclick="startSolo()" style="width:100%;justify-content:center">▶ Commencer la partie solo</button>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Rejoindre une partie en ligne</div>
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Pseudo</label>
       <input id="myName" type="text" placeholder="Ton pseudo..." maxlength="16"/>
@@ -307,7 +331,8 @@ const SUIT_SYM={hearts:'♥',diamonds:'♦',clubs:'♣',spades:'♠'};
 const RANK_VAL={'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,'J':11,'Q':12,'K':13,'A':14};
 let ws=null;
 let state={myId:null,roomCode:null,isHost:false,gs:null,selectedCards:[],swapOpen:null,swapHand:null,players:[],
-  lastEventSeen:0,lastTopId:null,b3Seen:0,wonShown:false,pendingHiddenCard:null};
+  lastEventSeen:0,lastTopId:null,b3Seen:0,wonShown:false,pendingHiddenCard:null,
+  solo:false,difficulty:'med',numBots:1};
 
 function isBlack3(c){return c&&c.rank==='3'&&(c.suit==='clubs'||c.suit==='spades');}
 function cardVal(c){return RANK_VAL[c.rank]||0;}
@@ -460,7 +485,7 @@ function connect(){
   ws.onerror=()=>setConn('red','Erreur');
   ws.onmessage=(e)=>{let m;try{m=JSON.parse(e.data);}catch{return;}handleServer(m);};
 }
-function send(msg){if(ws&&ws.readyState===1)ws.send(JSON.stringify(msg));}
+function send(msg){if(state.solo)return;if(ws&&ws.readyState===1)ws.send(JSON.stringify(msg));}
 function setConn(c,t){document.getElementById('connDot').className='conn-dot '+(c==='green'?'green':c==='red'?'red':'orange');document.getElementById('connStatus').textContent=t;}
 function handleServer(msg){
   if(msg.type==='room_list')return renderRoomList(msg.rooms);
@@ -484,7 +509,7 @@ function renderWaiting(){const p=state.players||[];document.getElementById('wait
 function refreshRooms(){send({type:'get_rooms'});}
 function renderRoomList(rooms){const el=document.getElementById('roomList');if(!rooms||!rooms.length){el.innerHTML='<div class="empty-state">Aucune partie disponible</div>';return;}el.innerHTML=rooms.map(r=>`<div class="room-item"><div><span style="font-weight:600;color:var(--accent2)">${r.code}</span><span style="color:var(--muted);margin-left:8px">${r.count}/4 • Hôte : ${r.host}</span></div><button class="btn btn-secondary" onclick="joinRoom('${r.code}')" style="font-size:12px;padding:6px 12px">Rejoindre</button></div>`).join('');}
 function startGame(){send({type:'start_game'});}
-function receiveGameStart(gs){document.getElementById('lobby').style.display='none';document.getElementById('game').style.display='block';document.getElementById('chatToggle').style.display='flex';startMusic();applyGS(gs);}
+function receiveGameStart(gs){document.getElementById('lobby').style.display='none';document.getElementById('game').style.display='block';document.getElementById('chatToggle').style.display=state.solo?'none':'flex';startMusic();applyGS(gs);}
 
 /* ---------- ÉTAT DU JEU ---------- */
 function applyGS(gs){
@@ -501,6 +526,7 @@ function applyGS(gs){
     if(hasBlack3(me))showCounterPrompt(gs.pendingBlack3);
     else autoAcceptBlack3();
   }
+  if(state.solo)soloTick();
 }
 function myPS(gs){return gs.players.find(p=>p.id===state.myId);}
 function hasBlack3(p){return p.hand.some(isBlack3)||(p.open||[]).some(c=>isBlack3(c));}
@@ -689,18 +715,43 @@ function removeCard(p,card){
 function drawTo6(p,gs){while(p.hand.length<6&&gs.deck.length>0)p.hand.push(gs.deck.shift());}
 function checkWin(p){return p.hand.length===0&&p.open.every(c=>!c)&&p.hidden.every(c=>!c);}
 
+/* Transfert de la pile vers un joueur, avec sécurité anti-blocage.
+   Détecte les boucles : si la même configuration (nb de cartes par joueur) revient trop souvent
+   alors que la pioche est vide, la pile bloquée est défaussée. Retourne true si défaussée. */
+function totalCardsRaw(p){return p.hand.length+p.open.filter(c=>c).length+p.hidden.filter(c=>c).length;}
+function transferPileTo(gs,player,extraCard){
+  gs.sigLog=gs.sigLog||[];
+  const sig=gs.players.map(p=>totalCardsRaw(p)).join(',');
+  const seen=gs.sigLog.filter(s=>s===sig).length;
+  const deckEmpty=gs.deck.length===0;
+  let blocked=false;
+  if(deckEmpty&&(seen>=4||(gs.pickupStreak||0)>=8)){
+    gs.discardCount+=gs.pile.length;
+    if(extraCard)player.hand.push(extraCard);
+    blocked=true;gs.pickupStreak=0;gs.sigLog=[];
+  } else {
+    if(extraCard)player.hand.push(extraCard);
+    player.hand.push(...gs.pile);
+    gs.pickupStreak=(gs.pickupStreak||0)+1;
+    gs.sigLog.push(sig);if(gs.sigLog.length>40)gs.sigLog.shift();
+  }
+  gs.pile=[];gs.pileVisible=null;gs.lastPlayCount=0;
+  return blocked;
+}
+
 function playSelected(){
   if(!state.selectedCards.length)return;
   if(isBlack3(state.selectedCards[0])){showBlack3Overlay(state.selectedCards);return;}
   doPlay(state.selectedCards);
 }
 
-function doPlay(cards){
-  const gs=clone(state.gs);const me=gs.players.find(p=>p.id===state.myId);const first=cards[0];
-  cards.forEach(c=>removeCard(me,c));
+/* Applique une pose de cartes pour n'importe quel joueur (humain ou bot). Retourne sameTurn. */
+function executePlay(gs,player,cards,opts){
+  opts=opts||{};const first=cards[0];gs.pickupStreak=0;const dc0=gs.discardCount;
+  cards.forEach(c=>removeCard(player,c));
   gs.pile.push(...cards);gs.lastPlayCount=cards.length;gs.log=gs.log||[];
-  gs.log.push(`<span class="hl">${me.name}</span> joue ${cards.map(c=>c.rank+suitSym(c)).join(' + ')}`);
-  drawTo6(me,gs);
+  if(!opts.noLog)gs.log.push(`<span class="hl">${player.name}</span> joue ${cards.map(c=>c.rank+suitSym(c)).join(' + ')}`);
+  drawTo6(player,gs);
   let sameTurn=false,ev={kind:'play'};
   if(first.rank==='10'){gs.discardCount+=gs.pile.length;gs.pile=[];gs.pileVisible=null;gs.log.push('<span class="good">💥 10 — Pile effacée ! Rejoue.</span>');sameTurn=true;ev={kind:'10'};}
   else if(first.rank==='2'){gs.pileVisible=null;gs.log.push('<span class="warn">🔄 2 — Reset !</span>');ev={kind:'2'};}
@@ -709,39 +760,43 @@ function doPlay(cards){
   else if(first.rank==='8'){const alive=gs.players.filter(p=>!p.done).length;if(alive===2){gs.log.push('🔁 8 — Rejoue !');sameTurn=true;}else{gs.direction*=-1;gs.log.push('🔁 8 — Sens inversé !');}ev={kind:'8'};}
   else{gs.pileVisible=first;}
   if(gs.pile.length>=4){const t=gs.pile.slice(-4);if(t.every(x=>x.rank===t[0].rank)){gs.discardCount+=gs.pile.length;gs.pile=[];gs.pileVisible=null;gs.log.push('<span class="good">💣 4 identiques — Pile effacée ! Rejoue.</span>');sameTurn=true;ev={kind:'four'};}}
-  if(checkWin(me)){me.done=true;gs.log.push(`<span class="good">🏆 ${me.name} a gagné !</span>`);}
-  if(!sameTurn&&!me.done)advanceTurn(gs);
+  if(checkWin(player)){player.done=true;gs.log.push(`<span class="good">🏆 ${player.name} a gagné !</span>`);}
+  if(gs.discardCount>dc0)gs.sigLog=[]; // progrès réel : on réinitialise le détecteur de boucle
   gs.version=(gs.version||0)+1;ev.nonce=gs.version;gs.lastEvent=ev;
+  return sameTurn;
+}
+
+/* Révèle et joue une carte cachée (humain ou bot). Suppose que ce n'est PAS un 3 noir. */
+function executeHiddenReveal(gs,player,c){
+  const idx=player.hidden.findIndex(h=>h&&h.id===c.id);if(idx<0)return{invalid:true};
+  gs.log=gs.log||[];
+  if(canPlay(c,gs)){
+    gs.log.push(`<span class="hl">${player.name}</span> retourne une carte cachée : <b>${c.rank}${SUIT_SYM[c.suit]}</b> <span class="good">✓ Jouable !</span>`);
+    const sameTurn=executePlay(gs,player,[c],{noLog:true});
+    return{playable:true,sameTurn};
+  } else {
+    player.hidden[idx]=null;
+    const blocked=transferPileTo(gs,player,c);
+    gs.log.push(`<span class="hl">${player.name}</span> retourne <b>${c.rank}${SUIT_SYM[c.suit]}</b> — `+(blocked?'<span class="warn">⚠️ blocage, pile défaussée, rejoue !</span>':'<span class="warn">pas jouable, ramasse et rejoue !</span>'));
+    gs.currentPlayer=player.idx;
+    gs.version=(gs.version||0)+1;gs.lastEvent={kind:'pickup',nonce:gs.version};
+    return{playable:false,sameTurn:false};
+  }
+}
+
+function doPlay(cards){
+  const gs=clone(state.gs);const me=gs.players.find(p=>p.id===state.myId);
+  const sameTurn=executePlay(gs,me,cards);
+  if(!sameTurn&&!me.done)advanceTurn(gs);
   state.selectedCards=[];send({type:'game_state',gameState:gs});applyGS(gs);
 }
 
 function playHidden(c){
   const gs=clone(state.gs);const me=gs.players.find(p=>p.id===state.myId);
   const idx=me.hidden.findIndex(h=>h&&h.id===c.id);if(idx<0)return;
-  // si c'est un 3 noir → flow spécial
   if(isBlack3(c)){me.hidden[idx]=null;state.gs=gs;showBlack3Overlay([c],true);return;}
-  me.hidden[idx]=null;gs.log=gs.log||[];
-  gs.log.push(`<span class="hl">${me.name}</span> retourne une carte cachée : <b>${c.rank}${SUIT_SYM[c.suit]}</b>`);
-  if(canPlay(c,gs)){
-    gs.pile.push(c);gs.lastPlayCount=1;gs.log.push('<span class="good">✓ Jouable !</span>');
-    let sameTurn=false,ev={kind:'play'};
-    if(c.rank==='10'){gs.discardCount+=gs.pile.length;gs.pile=[];gs.pileVisible=null;gs.log.push('<span class="good">💥 10 — Pile effacée !</span>');sameTurn=true;ev={kind:'10'};}
-    else if(c.rank==='2'){gs.pileVisible=null;gs.log.push('<span class="warn">🔄 2 — Reset !</span>');ev={kind:'2'};}
-    else if(c.rank==='5'){gs.log.push('👻 5 — Invisible !');ev={kind:'5'};}
-    else if(c.rank==='7'){gs.pileVisible=c;gs.log.push('<span class="warn">⬇️ 7 !</span>');ev={kind:'7'};}
-    else if(c.rank==='8'){const alive=gs.players.filter(p=>!p.done).length;if(alive===2){gs.log.push('🔁 8 — Rejoue !');sameTurn=true;}else{gs.direction*=-1;gs.log.push('🔁 8 — Reverse !');}ev={kind:'8'};}
-    else{gs.pileVisible=c;}
-    if(gs.pile.length>=4){const t=gs.pile.slice(-4);if(t.every(x=>x.rank===t[0].rank)){gs.discardCount+=gs.pile.length;gs.pile=[];gs.pileVisible=null;gs.log.push('<span class="good">💣 Carré !</span>');sameTurn=true;ev={kind:'four'};}}
-    if(checkWin(me)){me.done=true;gs.log.push(`<span class="good">🏆 ${me.name} a gagné !</span>`);}
-    if(!sameTurn&&!me.done)advanceTurn(gs);
-    gs.version=(gs.version||0)+1;ev.nonce=gs.version;gs.lastEvent=ev;
-  } else {
-    me.hand.push(c,...gs.pile);gs.pile=[];gs.pileVisible=null;gs.lastPlayCount=0;
-    gs.log.push(`<span class="warn">✗ Pas jouable — ${me.name} ramasse la pile et rejoue !</span>`);
-    // celui qui ramasse rejoue
-    gs.currentPlayer=me.idx;
-    gs.version=(gs.version||0)+1;gs.lastEvent={kind:'pickup',nonce:gs.version};
-  }
+  const r=executeHiddenReveal(gs,me,c);
+  if(r.playable&&!r.sameTurn&&!me.done)advanceTurn(gs);
   send({type:'game_state',gameState:gs});applyGS(gs);
 }
 
@@ -750,9 +805,8 @@ function advanceTurn(gs){const n=gs.players.length;let next=(gs.currentPlayer+gs
 function pickupPile(){
   const gs=clone(state.gs);const me=gs.players.find(p=>p.id===state.myId);
   if(!me||!gs.pile.length)return;
-  me.hand.push(...gs.pile);gs.pile=[];gs.pileVisible=null;gs.lastPlayCount=0;gs.log=gs.log||[];
-  gs.log.push(`<span class="hl">${me.name}</span> ramasse la pile (${me.hand.length} cartes) — <span class="warn">il rejoue !</span>`);
-  // celui qui ramasse rejoue : on n'avance PAS le tour
+  const blocked=transferPileTo(gs,me);gs.log=gs.log||[];
+  gs.log.push(blocked?`<span class="warn">⚠️ Blocage — pile défaussée. ${me.name} rejoue.</span>`:`<span class="hl">${me.name}</span> ramasse la pile (${me.hand.length} cartes) — <span class="warn">il rejoue !</span>`);
   gs.currentPlayer=me.idx;
   gs.version=(gs.version||0)+1;gs.lastEvent={kind:'pickup',nonce:gs.version};
   state.selectedCards=[];send({type:'game_state',gameState:gs});applyGS(gs);
@@ -777,10 +831,18 @@ function resolveBlack3(targetId){
   cards.forEach(c=>removeCard(me,c));
   gs.discardCount+=cards.length; // le 3 noir se défausse
   drawTo6(me,gs);
-  gs.version=(gs.version||0)+1;
-  gs.pendingBlack3={attackerId:state.myId,attackerName:me.name,targetId,nonce:gs.version};
   gs.log=gs.log||[];gs.log.push(`<span class="hl">${me.name}</span> joue un 3 Noir et vise <b>${target.name}</b> 🗡️`);
-  gs.lastEvent={kind:'black3',nonce:gs.version};
+  if(checkWin(me)){
+    me.done=true;gs.log.push(`<span class="good">🏆 ${me.name} a gagné en posant son dernier 3 Noir !</span>`);
+    const blocked=transferPileTo(gs,target);
+    gs.log.push(blocked?`<span class="warn">⚠️ Blocage — pile défaussée.</span>`:`<span class="warn">${target.name} récupère la pile et rejoue.</span>`);
+    gs.pendingBlack3=null;gs.currentPlayer=target.idx;
+    gs.version=(gs.version||0)+1;gs.lastEvent={kind:'pickup',nonce:gs.version};
+  } else {
+    gs.version=(gs.version||0)+1;
+    gs.pendingBlack3={attackerId:state.myId,attackerName:me.name,targetId,nonce:gs.version};
+    gs.lastEvent={kind:'black3',nonce:gs.version};
+  }
   state._b3cards=null;state.pendingHiddenCard=null;
   send({type:'game_state',gameState:gs});applyGS(gs);
 }
@@ -797,11 +859,9 @@ function acceptBlack3(){closeOverlay();autoAcceptBlack3();}
 function autoAcceptBlack3(){
   const gs=clone(state.gs);const me=gs.players.find(p=>p.id===state.myId);
   if(!gs.pendingBlack3)return;
-  me.hand.push(...gs.pile);gs.pile=[];gs.pileVisible=null;gs.lastPlayCount=0;gs.log=gs.log||[];
-  gs.log.push(`<span class="warn">${me.name} encaisse la pile (3 Noir) — il rejoue !</span>`);
-  gs.pendingBlack3=null;
-  // celui qui prend le 3 noir rejoue
-  gs.currentPlayer=me.idx;
+  const blocked=transferPileTo(gs,me);gs.log=gs.log||[];
+  gs.log.push(blocked?`<span class="warn">⚠️ Blocage — pile défaussée. ${me.name} rejoue.</span>`:`<span class="warn">${me.name} encaisse la pile (3 Noir) — il rejoue !</span>`);
+  gs.pendingBlack3=null;gs.currentPlayer=me.idx;
   gs.version=(gs.version||0)+1;gs.lastEvent={kind:'pickup',nonce:gs.version};
   send({type:'game_state',gameState:gs});applyGS(gs);
 }
@@ -813,10 +873,9 @@ function counterBlack3(){
   let b3=me.hand.find(isBlack3)||(me.open||[]).find(c=>isBlack3(c));
   if(!b3)return;
   removeCard(me,b3);gs.discardCount+=1;drawTo6(me,gs);
-  attacker.hand.push(...gs.pile);gs.pile=[];gs.pileVisible=null;gs.lastPlayCount=0;gs.log=gs.log||[];
-  gs.log.push(`<span class="hl">${me.name}</span> contre avec un 3 Noir ! <span class="warn">${attacker.name} ramasse la pile et rejoue.</span>`);
+  const blocked=transferPileTo(gs,attacker);gs.log=gs.log||[];
+  gs.log.push(`<span class="hl">${me.name}</span> contre avec un 3 Noir ! `+(blocked?`<span class="warn">⚠️ pile défaussée. ${attacker.name} rejoue.</span>`:`<span class="warn">${attacker.name} ramasse la pile et rejoue.</span>`));
   gs.pendingBlack3=null;
-  // l'attaquant contré ramasse et rejoue
   gs.currentPlayer=attacker.idx;
   gs.version=(gs.version||0)+1;gs.lastEvent={kind:'counter',nonce:gs.version};
   send({type:'game_state',gameState:gs});applyGS(gs);
@@ -864,6 +923,190 @@ function receiveChat(msg){
   box.appendChild(div);
   box.scrollTop=box.scrollHeight;
   if(!chat.open&&!mine){chat.unread++;updateChatBadge();sfx('play');}
+}
+
+/* ================= MODE SOLO / IA ================= */
+function selectDiff(d,el){state.difficulty=d;document.querySelectorAll('.choice-btn.diff').forEach(b=>b.classList.remove('sel'));el.classList.add('sel');}
+function selectNum(n,el){state.numBots=n;document.querySelectorAll('.choice-btn.num').forEach(b=>b.classList.remove('sel'));el.classList.add('sel');}
+
+const BOT_NAMES={easy:['Bot Tranquille','Bot Cool','Bot Pépère'],med:['Bot Malin','Bot Futé','Bot Rusé'],hard:['Bot Impitoyable','Bot Tueur','Bot Boss']};
+function startSolo(){
+  audio();
+  state.solo=true;state.myId='human';state.wonShown=false;state.lastEventSeen=0;state.b3Seen=0;
+  const pool=BOT_NAMES[state.difficulty]||BOT_NAMES.med;
+  const players=[{id:'human',name:getName(),bot:false}];
+  for(let i=0;i<state.numBots;i++)players.push({id:'bot'+i,name:pool[i],bot:true});
+  receiveGameStart(buildLocalGame(players));
+}
+function buildLocalGame(players){
+  const SUITS=['hearts','diamonds','clubs','spades'];
+  const RANKS=['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+  let deck=[];
+  for(const s of SUITS)for(const r of RANKS)deck.push({rank:r,suit:s,id:Math.random().toString(36).slice(2,9)});
+  for(let i=deck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]];}
+  const ps=players.map((p,i)=>({id:p.id,name:p.name,idx:i,bot:p.bot,hidden:deck.splice(0,3),open:deck.splice(0,3),hand:deck.splice(0,6),done:false,swapDone:false}));
+  return {version:1,players:ps,deck,pile:[],discardCount:0,currentPlayer:0,direction:1,pileVisible:null,swapPhase:true,pendingBlack3:null,lastEvent:null,lastPlayCount:0,log:['🃏 Partie solo lancée ! Choisis tes cartes visibles.']};
+}
+
+/* Ordonnanceur : après chaque changement d'état, fait jouer les bots */
+function soloTick(){
+  if(!state.solo)return;const gs=state.gs;if(!gs)return;
+  if(gs.players.find(p=>p.done))return; // partie finie
+  if(gs.pendingBlack3){
+    const tgt=gs.players.find(p=>p.id===gs.pendingBlack3.targetId);
+    if(tgt&&tgt.bot)setTimeout(()=>botResolveBlack3(tgt),1000);
+    return;
+  }
+  if(gs.swapPhase){
+    const bot=gs.players.find(p=>p.bot&&!p.swapDone);
+    if(bot)setTimeout(()=>botSwap(bot),700);
+    return;
+  }
+  const cur=gs.players[gs.currentPlayer];
+  if(cur&&cur.bot&&!cur.done)setTimeout(()=>botTurn(cur),950);
+}
+
+function cardScore(c){if(c.rank==='10')return 100;if(c.rank==='2')return 95;if(isBlack3(c))return 90;if(c.rank==='5')return 55;if(c.rank==='7')return 45;return cardVal(c);}
+function totalCards(p){return p.hand.length+p.open.filter(c=>c).length+p.hidden.filter(c=>c).length;}
+function opponentClosestToWin(b,gs){const o=gs.players.filter(p=>p.id!==b.id&&!p.done);if(!o.length)return null;o.sort((x,y)=>totalCards(x)-totalCards(y));return o[0];}
+
+function botSwap(bot){
+  const gs=clone(state.gs);const b=gs.players.find(p=>p.id===bot.id);if(!b||b.swapDone)return;
+  if(state.difficulty!=='easy'){
+    const all=[...b.open.filter(c=>c),...b.hand];
+    all.sort((x,y)=>cardScore(y)-cardScore(x));
+    const best3=all.slice(0,3),rest=all.slice(3);
+    b.open=[best3[0]||null,best3[1]||null,best3[2]||null];b.hand=rest;
+  }
+  b.swapDone=true;gs.log=gs.log||[];gs.log.push(`<span class="hl">${b.name}</span> est prêt !`);
+  if(gs.players.every(p=>p.swapDone)){
+    gs.swapPhase=false;
+    if(gs.deck.length>0){const fc=gs.deck.shift();gs.pile.push(fc);gs.pileVisible=fc;gs.log.push(`🃏 Carte de départ : <b>${fc.rank}${SUIT_SYM[fc.suit]}</b>`);}
+    gs.log.push(`À ${gs.players[gs.currentPlayer].name} de jouer !`);
+  }
+  gs.version=(gs.version||0)+1;applyGS(gs);
+}
+
+function botTurn(bot){
+  if(!state.solo)return;
+  const gs=clone(state.gs);const b=gs.players.find(p=>p.id===bot.id);
+  if(!b||b.done||gs.currentPlayer!==b.idx||gs.pendingBlack3||gs.swapPhase)return;
+  const mv=botChooseMove(b,gs,state.difficulty);
+  if(mv.type==='pickup'){
+    const blocked=transferPileTo(gs,b);gs.log=gs.log||[];
+    gs.log.push(blocked?`<span class="warn">⚠️ Blocage — pile défaussée. ${b.name} rejoue.</span>`:`<span class="hl">${b.name}</span> ramasse la pile (${b.hand.length} cartes) — <span class="warn">il rejoue !</span>`);
+    gs.currentPlayer=b.idx;gs.version=(gs.version||0)+1;gs.lastEvent={kind:'pickup',nonce:gs.version};
+  } else if(mv.type==='black3'){
+    botExecuteBlack3(gs,b,mv.cards,mv.targetId);
+  } else if(mv.type==='playHidden'){
+    const c=mv.card;
+    if(isBlack3(c)){
+      const idx=b.hidden.findIndex(h=>h&&h.id===c.id);if(idx>=0)b.hidden[idx]=null;
+      gs.log=gs.log||[];gs.log.push(`<span class="hl">${b.name}</span> retourne une carte cachée : <b>3 Noir</b> 🗡️`);
+      const leader=opponentClosestToWin(b,gs);const opps=gs.players.filter(p=>p.id!==b.id&&!p.done);
+      const tId=leader?leader.id:(opps[0]&&opps[0].id);
+      botExecuteBlack3(gs,b,[c],tId,true);
+    } else {
+      const r=executeHiddenReveal(gs,b,c);
+      if(r.playable&&!r.sameTurn&&!b.done)advanceTurn(gs);
+    }
+  } else {
+    const sameTurn=executePlay(gs,b,mv.cards);
+    if(!sameTurn&&!b.done)advanceTurn(gs);
+  }
+  applyGS(gs);
+}
+
+function botExecuteBlack3(gs,b,cards,targetId,fromHidden){
+  if(!fromHidden)cards.forEach(c=>removeCard(b,c));
+  gs.discardCount+=cards.length;drawTo6(b,gs);
+  const target=gs.players.find(p=>p.id===targetId);
+  gs.log=gs.log||[];gs.log.push(`<span class="hl">${b.name}</span> joue un 3 Noir et vise <b>${target?target.name:'?'}</b> 🗡️`);
+  if(checkWin(b)){
+    b.done=true;gs.log.push(`<span class="good">🏆 ${b.name} a gagné en posant son dernier 3 Noir !</span>`);
+    const blocked=transferPileTo(gs,target);
+    gs.log.push(blocked?`<span class="warn">⚠️ Blocage — pile défaussée.</span>`:`<span class="warn">${target.name} récupère la pile et rejoue.</span>`);
+    gs.pendingBlack3=null;gs.currentPlayer=target.idx;
+    gs.version=(gs.version||0)+1;gs.lastEvent={kind:'pickup',nonce:gs.version};
+  } else {
+    gs.version=(gs.version||0)+1;
+    gs.pendingBlack3={attackerId:b.id,attackerName:b.name,targetId,nonce:gs.version};
+    gs.lastEvent={kind:'black3',nonce:gs.version};
+  }
+}
+
+function botShouldCounter(diff){if(diff==='hard')return true;if(diff==='med')return Math.random()<0.5;return false;}
+function botResolveBlack3(bot){
+  const gs=clone(state.gs);const b=gs.players.find(p=>p.id===bot.id);
+  if(!gs.pendingBlack3||gs.pendingBlack3.targetId!==b.id)return;
+  const attacker=gs.players.find(p=>p.id===gs.pendingBlack3.attackerId);
+  gs.log=gs.log||[];
+  if(hasBlack3(b)&&botShouldCounter(state.difficulty)){
+    let b3=b.hand.find(isBlack3)||(b.open||[]).find(c=>isBlack3(c));
+    removeCard(b,b3);gs.discardCount+=1;drawTo6(b,gs);
+    const blocked=transferPileTo(gs,attacker);
+    gs.log.push(`<span class="hl">${b.name}</span> contre avec un 3 Noir ! `+(blocked?`<span class="warn">⚠️ pile défaussée. ${attacker.name} rejoue.</span>`:`<span class="warn">${attacker.name} ramasse et rejoue.</span>`));
+    gs.pendingBlack3=null;gs.currentPlayer=attacker.idx;
+    gs.version=(gs.version||0)+1;gs.lastEvent={kind:'counter',nonce:gs.version};
+  } else {
+    const blocked=transferPileTo(gs,b);
+    gs.log.push(blocked?`<span class="warn">⚠️ Blocage — pile défaussée. ${b.name} rejoue.</span>`:`<span class="warn">${b.name} encaisse la pile (3 Noir) — il rejoue !</span>`);
+    gs.pendingBlack3=null;gs.currentPlayer=b.idx;
+    gs.version=(gs.version||0)+1;gs.lastEvent={kind:'pickup',nonce:gs.version};
+  }
+  applyGS(gs);
+}
+
+/* Cerveau du bot : choisit le coup selon la difficulté */
+function botChooseMove(b,gs,diff){
+  let pool;
+  if(b.hand.length>0)pool=b.hand.slice();
+  else if(b.open.filter(c=>c).length>0)pool=b.open.filter(c=>c);
+  else{const hid=b.hidden.filter(c=>c);return{type:'playHidden',card:hid[Math.floor(Math.random()*hid.length)]};}
+  const valid=pool.filter(c=>canPlay(c,gs));
+  if(valid.length===0)return{type:'pickup'};
+  const black3s=valid.filter(isBlack3);
+  const dupesOf=r=>pool.filter(c=>c.rank===r&&canPlay(c,gs));
+
+  if(diff==='easy'){
+    const pick=valid[Math.floor(Math.random()*valid.length)];
+    if(isBlack3(pick))return mkB3(b,gs,[pick]);
+    return{type:'play',cards:Math.random()<0.5?[pick]:dupesOf(pick.rank)};
+  }
+
+  const normal=valid.filter(c=>!isBlack3(c)&&c.rank!=='2'&&c.rank!=='10');
+  // Difficile : balance un 3 noir sur le leader si la pile est grosse
+  if(diff==='hard'&&black3s.length>0){
+    const leader=opponentClosestToWin(b,gs);
+    if(leader&&(gs.pile.length>=5||totalCards(leader)<=4))return mkB3(b,gs,[black3s[0]],leader.id);
+  }
+  if(normal.length>0){
+    normal.sort((a,c)=>cardVal(a)-cardVal(c));
+    return{type:'play',cards:dupesOf(normal[0].rank)};
+  }
+  // plus de carte "normale" : on utilise les spéciales pour éviter de ramasser
+  const twos=valid.filter(c=>c.rank==='2'),tens=valid.filter(c=>c.rank==='10');
+  const fives=valid.filter(c=>c.rank==='5'),sevens=valid.filter(c=>c.rank==='7');
+  if(diff==='hard'){
+    if(tens.length&&gs.pile.length>=4)return{type:'play',cards:[tens[0]]};
+    if(twos.length)return{type:'play',cards:[twos[0]]};
+    if(fives.length)return{type:'play',cards:[fives[0]]};
+    if(sevens.length)return{type:'play',cards:[sevens[0]]};
+    if(tens.length)return{type:'play',cards:[tens[0]]};
+    if(black3s.length){const l=opponentClosestToWin(b,gs);return mkB3(b,gs,[black3s[0]],l&&l.id);}
+    return{type:'pickup'};
+  }
+  // moyen
+  if(twos.length)return{type:'play',cards:[twos[0]]};
+  if(fives.length)return{type:'play',cards:[fives[0]]};
+  if(sevens.length)return{type:'play',cards:[sevens[0]]};
+  if(tens.length)return{type:'play',cards:[tens[0]]};
+  if(black3s.length){const opps=gs.players.filter(p=>p.id!==b.id&&!p.done);const t=opps[Math.floor(Math.random()*opps.length)];return mkB3(b,gs,[black3s[0]],t&&t.id);}
+  return{type:'pickup'};
+}
+function mkB3(b,gs,cards,targetId){
+  if(!targetId){const l=opponentClosestToWin(b,gs);const opps=gs.players.filter(p=>p.id!==b.id&&!p.done);targetId=l?l.id:(opps[0]&&opps[0].id);}
+  return{type:'black3',cards,targetId};
 }
 
 connect();
